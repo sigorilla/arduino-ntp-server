@@ -2,7 +2,8 @@
 #include <EthernetUdp2.h>
 #include <Wire.h>
 #include <SPI.h>
-#include "RTClib.h"
+#include "DateTime.h"
+#include "RTC.h"
 
 byte mac[] = {
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
@@ -17,10 +18,11 @@ byte packetBuffer[ NTP_PACKET_SIZE ];
 
 EthernetUDP Udp;
 
-RTC_DS1307 RTC;
+RTC RTC;
 
 int TZ = 3;
 
+// TODO: delete after connect GPS module
 DateTime dtt(__DATE__, __TIME__);
 DateTime dt(dtt.year(), dtt.month(), dtt.day(), dtt.hour() - TZ, dtt.minute(), dtt.second());
 
@@ -29,7 +31,7 @@ unsigned long originTime = 0;
 unsigned long receiveTime = 0;
 unsigned long transmitTime = 0;
 
-void setup () {
+void setup() {
   Serial.begin(9600);
   while (!Serial) {
     continue;
@@ -44,17 +46,17 @@ void setup () {
   Serial.println("NTP Server is running.");
 }
 
-void loop () {
+void loop() {
   IPAddress remoteIP;
   int remotePort;
-  
   int packetSize = Udp.parsePacket();
 
   if (packetSize) {
     Serial.println("Get UDP packet.");
     DateTime now = RTC.now();
     receiveTime = now.unixtime();
-    referenceTime = receiveTime; // time of last set or update
+    // time of last set or update
+    referenceTime = receiveTime;
 
     remoteIP = Udp.remoteIP();
     remotePort = Udp.remotePort();
@@ -63,18 +65,17 @@ void loop () {
     Serial.print("port: ");
     Serial.println(remotePort);
     // We've received a packet, read the data from it
-    Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
+    // read the packet into the buffer
+    Udp.read(packetBuffer, NTP_PACKET_SIZE);
 
-    //the timestamp starts at byte 40 of the received packet and is four bytes,
-    // or two words, long. First, esxtract the two words:
-
-    // ReceiveTimestamp
+    // the timestamp starts at byte 40 of the received packet and is four bytes,
+    // or two words, long. First, extract the two words:
     unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
     unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
     // combine the four bytes (two words) into a long integer
     // this is NTP time (seconds since Jan 1 1900):
     originTime = highWord << 16 | lowWord;
-    
+
     sendNTPpacket(remoteIP, remotePort);
   }
 }
@@ -85,14 +86,21 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
   // (see URL above for details on the packets)
-  packetBuffer[0] = 0b11100100;   // LI, Version: 4, Mode: 4 (server)
-  packetBuffer[1] = 0b00000001;     // Stratum, or type of clock
-  packetBuffer[2] = 6;     // Polling Interval
-  packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // LI, Version: 4, Mode: 4 (server)
+  packetBuffer[0] = 0b11100100;
+  // Stratum, or type of clock
+  packetBuffer[1] = 0b00000001;
+  // Polling Interval
+  packetBuffer[2] = 6;
+  // Peer Clock Precision
+  packetBuffer[3] = 0xEC;
   // 8 bytes of zero for Root Delay & Root Dispersion
-  packetBuffer[12] = 71; // G
-  packetBuffer[13] = 80; // P
-  packetBuffer[14] = 83; // S
+  // G
+  packetBuffer[12] = 71;
+  // P
+  packetBuffer[13] = 80;
+  // S
+  packetBuffer[14] = 83;
   packetBuffer[15] = 0;
   // Reference Time
   packetBuffer[16] = (referenceTime & 0xFF000000) >> 24;
