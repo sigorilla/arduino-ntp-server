@@ -1,3 +1,25 @@
 # Arduino NTP Server
 
-As project for Information Security course at MIPT.
+Проект по курсу [Защита информации МФТИ](https://ru.wikipedia.org/wiki/Проект:Защита_информации/2015). Реализация [NTP](https://ru.wikipedia.org/wiki/NTP) сервера на Arduino, используя в качестве эталона времени — часы со спутника.
+
+## Модули
+
+* GPS — `GY-NEO6MV2`
+* RTC — Real Time Clock
+
+  > Вероятно в будущем уберем, потому что в GPS модуле есть свой RTC.
+
+## Отладка
+
+Для отладки создан скетч, который перенапрявляет все сообщения из стандартного Serial в UART GPS модуля. Таким образом, можно настроить GPS модуль, используя программу u-center от u-blox.
+
+## Ссылки
+
+* [u-center](https://www.u-blox.com/en/product/u-center-windows)
+* [Instructables about u-blox](http://www.instructables.com/id/Arduino-Ublox-GPS/)
+* [TinyGPS++](https://github.com/mikalhart/TinyGPSPlus)
+
+## Участники
+
+* Игорь Степанов — 213 группа
+* Павел Лысенко — 216 группа
