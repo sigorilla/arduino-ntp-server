@@ -19,7 +19,6 @@ byte packetBuffer[ NTP_PACKET_SIZE ];
 
 EthernetUDP Udp;
 
-
 // time of last set or update, so its after gps update
 DateTime referenceTime;
 DateTime originTime;
@@ -29,17 +28,16 @@ DateTime transmitTime;
 // GPS
 static const int RXPin = 8, TXPin = 9;
 static const uint32_t GPSBaud = 9600;
-GPS gps(false);
-SoftwareSerial GPSSerial(RXPin, TXPin);
+GPS gps(RXPin, TXPin, false);
 // For stats that happen every 5 seconds
 // TODO: depricated
 unsigned long last = 0UL;
 
 void setup() {
   Serial.begin(115200);
-  GPSSerial.begin(GPSBaud);
+  gps.begin(GPSBaud);
 
-  while (!Serial || !GPSSerial);
+  while (!Serial);
   Ethernet.begin(mac, ip);
   Udp.begin(NTP_PORT);
 
@@ -48,18 +46,21 @@ void setup() {
 
 void loop() {
   // work with GPS
-  if (!GPSSerial.isListening()) {
+  if (!gps.GPSSerial.isListening()) {
     Serial.println("GPS is not listening.");
   }
-  while (GPSSerial.available() > 0) {
-    if (gps.encode(GPSSerial.read())) {
-      if (gps.isUpdated()) {
-        referenceTime = gps.now();
-      }
+
+  while (gps.GPSSerial.available() > 0) {
+    if (gps.encode()) {
+      // TODO: what is it?
+      // $EIGLQ,ZDA*25\r\n
+      referenceTime = gps.now();
     }
   }
 
   // NTP
+  // TODO: put in separate classes: `NTPServer` and `NTPPacket`
+  // maybe not :)
   IPAddress remoteIP;
   int remotePort;
   int packetSize = Udp.parsePacket();
@@ -88,6 +89,18 @@ void loop() {
     // this is NTP time (seconds since Jan 1 1900):
     originTime.time(highWordSecond << 16 | lowWordSecond);
     originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
+
+    // TODO: something wrong with centisecond
+    // `null` is sent in sendNTPpacket()
+    // But in `originalTime` data is normal
+    Serial.print(F("REF: "));
+    Serial.print(referenceTime.ntptime());
+    Serial.print(" ");
+    Serial.println(referenceTime.centisecond());
+    Serial.print(F("ORIG: "));
+    Serial.print(originTime.ntptime());
+    Serial.print(" ");
+    Serial.println(originTime.centisecond());
 
     sendNTPpacket(remoteIP, remotePort);
   }
