@@ -6,6 +6,8 @@
 #include "DateTime.h"
 #include "GPS.h"
 
+#define DEBUG false
+
 byte mac[] = {
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
@@ -28,12 +30,10 @@ DateTime transmitTime;
 // GPS
 static const int RXPin = 8, TXPin = 9;
 static const uint32_t GPSBaud = 9600;
-GPS gps(RXPin, TXPin, false);
-// For stats that happen every 5 seconds
-// TODO: depricated
-unsigned long last = 0UL;
+GPS gps(RXPin, TXPin, DEBUG);
 
 void setup() {
+  // pinMode(RXPin, INPUT);
   Serial.begin(115200);
   gps.begin(GPSBaud);
 
@@ -42,22 +42,10 @@ void setup() {
   Udp.begin(NTP_PORT);
 
   Serial.println("NTP Server is running.");
+  referenceTime = gps.getZDA();
 }
 
 void loop() {
-  // work with GPS
-  if (!gps.GPSSerial.isListening()) {
-    Serial.println("GPS is not listening.");
-  }
-
-  while (gps.GPSSerial.available() > 0) {
-    if (gps.encode()) {
-      // TODO: what is it?
-      // $EIGLQ,ZDA*25\r\n
-      referenceTime = gps.now();
-    }
-  }
-
   // NTP
   // TODO: put in separate classes: `NTPServer` and `NTPPacket`
   // maybe not :)
@@ -67,14 +55,14 @@ void loop() {
 
   if (packetSize) {
     Serial.println("Get UDP packet.");
-    receiveTime = gps.now();
+    receiveTime = gps.getZDA();
 
     remoteIP = Udp.remoteIP();
     remotePort = Udp.remotePort();
-    Serial.print("IP: ");
-    Serial.println(remoteIP);
-    Serial.print("port: ");
-    Serial.println(remotePort);
+    // Serial.print("IP: ");
+    // Serial.println(remoteIP);
+    // Serial.print("port: ");
+    // Serial.println(remotePort);
     // We've received a packet, read the data from it
     // read the packet into the buffer
     Udp.read(packetBuffer, NTP_PACKET_SIZE);
@@ -85,22 +73,11 @@ void loop() {
     unsigned long lowWordSecond = word(packetBuffer[42], packetBuffer[43]);
     unsigned long highWordCentisecond = word(packetBuffer[44], packetBuffer[45]);
     unsigned long lowWordCentisecond = word(packetBuffer[46], packetBuffer[47]);
+
     // combine the four bytes (two words) into a long integer
     // this is NTP time (seconds since Jan 1 1900):
     originTime.time(highWordSecond << 16 | lowWordSecond);
     originTime.centisecond(highWordCentisecond << 16 | lowWordCentisecond);
-
-    // TODO: something wrong with centisecond
-    // `null` is sent in sendNTPpacket()
-    // But in `originalTime` data is normal
-    Serial.print(F("REF: "));
-    Serial.print(referenceTime.ntptime());
-    Serial.print(" ");
-    Serial.println(referenceTime.centisecond());
-    Serial.print(F("ORIG: "));
-    Serial.print(originTime.ntptime());
-    Serial.print(" ");
-    Serial.println(originTime.centisecond());
 
     sendNTPpacket(remoteIP, remotePort);
   }
@@ -112,8 +89,8 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
   // (see URL above for details on the packets)
-  // LI, Version: 4, Mode: 4 (server)
-  packetBuffer[0] = 0b11100100;
+  // LI: 0, Version: 3, Mode: 4 (server)
+  packetBuffer[0] = 0b00011100;
   // Stratum, or type of clock
   packetBuffer[1] = 0b00000001;
   // Polling Interval
@@ -136,10 +113,12 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   packetBuffer[17] = (referenceTime.ntptime() & 0x00FF0000) >> 16;
   packetBuffer[18] = (referenceTime.ntptime() & 0x0000FF00) >> 8;
   packetBuffer[19] = (referenceTime.ntptime() & 0x000000FF);
-  packetBuffer[20] = (referenceTime.centisecond() & 0xFF000000) >> 24;
-  packetBuffer[21] = (referenceTime.centisecond() & 0x00FF0000) >> 16;
-  packetBuffer[22] = (referenceTime.centisecond() & 0x0000FF00) >> 8;
-  packetBuffer[23] = (referenceTime.centisecond() & 0x000000FF);
+  byte refCent[4];
+  d2ba(1.0 * referenceTime.centisecond() / 100, refCent);
+  packetBuffer[20] = refCent[0];
+  packetBuffer[21] = refCent[1];
+  packetBuffer[22] = refCent[2];
+  packetBuffer[23] = refCent[3];
 
   // Origin Time
   packetBuffer[24] = (originTime.ntptime() & 0xFF000000) >> 24;
@@ -156,25 +135,60 @@ unsigned long sendNTPpacket(IPAddress remoteIP, int remotePort) {
   packetBuffer[33] = (receiveTime.ntptime() & 0x00FF0000) >> 16;
   packetBuffer[34] = (receiveTime.ntptime() & 0x0000FF00) >> 8;
   packetBuffer[35] = (receiveTime.ntptime() & 0x000000FF);
-  packetBuffer[36] = (receiveTime.centisecond() & 0xFF000000) >> 24;
-  packetBuffer[37] = (receiveTime.centisecond() & 0x00FF0000) >> 16;
-  packetBuffer[38] = (receiveTime.centisecond() & 0x0000FF00) >> 8;
-  packetBuffer[39] = (receiveTime.centisecond() & 0x000000FF);
+  byte recCent[4];
+  d2ba(1.0 * receiveTime.centisecond() / 100, recCent);
+  packetBuffer[36] = recCent[0];
+  packetBuffer[37] = recCent[1];
+  packetBuffer[38] = recCent[2];
+  packetBuffer[39] = recCent[3];
 
   // Transmit Time
-  transmitTime = gps.now();
+  transmitTime = gps.getZDA();
   packetBuffer[40] = (transmitTime.ntptime() & 0xFF000000) >> 24;
   packetBuffer[41] = (transmitTime.ntptime() & 0x00FF0000) >> 16;
   packetBuffer[42] = (transmitTime.ntptime() & 0x0000FF00) >> 8;
   packetBuffer[43] = (transmitTime.ntptime() & 0x000000FF);
-  packetBuffer[44] = (transmitTime.centisecond() & 0xFF000000) >> 24;
-  packetBuffer[45] = (transmitTime.centisecond() & 0x00FF0000) >> 16;
-  packetBuffer[46] = (transmitTime.centisecond() & 0x0000FF00) >> 8;
-  packetBuffer[47] = (transmitTime.centisecond() & 0x000000FF);
+  byte traCent[4];
+  d2ba(1.0 * transmitTime.centisecond() / 100, traCent);
+  packetBuffer[44] = traCent[0];
+  packetBuffer[45] = traCent[1];
+  packetBuffer[46] = traCent[2];
+  packetBuffer[47] = traCent[3];
 
   // all NTP fields have been given values, now
   // you can send a packet requesting a timestamp:
   Udp.beginPacket(remoteIP, remotePort);
   Udp.write(packetBuffer, NTP_PACKET_SIZE);
   Udp.endPacket();
+
+  Serial.println("End of UDP packet.");
+}
+
+/**
+ * Double to byte array
+ */
+void d2ba(double cent, byte *output) {
+  // Serial.println(cent);
+
+  int j = 0;
+
+  for (int i = 0; i < 8; i++){
+    byte tmp = int(cent * 16);
+    cent *= 16;
+    cent = cent - floor(cent);
+    // Serial.print(cent, 10);
+    // Serial.print(", ");
+    if (i % 2 == 1) {
+      output[j] += tmp;
+      j++;
+    } else {
+      output[j] = tmp * 16;
+    }
+  }
+
+  // Serial.println("Debug loop");
+  // for (int i = 0; i < 4; i++) {
+  //   Serial.println(output[i]);
+  // }
+  // Serial.println("End debug loop");
 }

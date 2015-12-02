@@ -81,8 +81,13 @@ class GPS {
     isNotChecked = true;
     validString = false;
     isUpdated_ = false;
+    getFlag_ = true;
   };
 
+  /**
+   * Start serial with baund
+   * @param baund uint32_t
+   */
   void begin(uint32_t baund) {
     GPSSerial.begin(baund);
     while(!GPSSerial);
@@ -99,6 +104,11 @@ class GPS {
     return datetime_.now();
   }
 
+  DateTime getZDA(void);
+
+  /**
+   * Serial port for GPS
+   */
   SoftwareSerial GPSSerial;
   const String GPS_CODE_ZDA = "GLZDA";
  private:
@@ -116,6 +126,7 @@ class GPS {
   bool validCode;
   bool validString;
   bool isUpdated_;
+  bool getFlag_;
 
   bool debug_;
   String msg; // TODO: should be removed, only for debug

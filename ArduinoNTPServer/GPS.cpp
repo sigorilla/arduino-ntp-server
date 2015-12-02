@@ -2,13 +2,10 @@
 
 /**
  * Setup GPS after load
- * https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf
- * @param SoftwareSerial Serial
  */
 void GPS::setup() {
-  // Serial.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
-
   // TODO: config GPS via GPSSerial.write()
+  // https://www.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf
   // * PUBX, 40 - p. 62
   // * CFG-RATE - p. 116
   // * GNSS - p. 90
@@ -17,9 +14,6 @@ void GPS::setup() {
   // > $PUBX,40,msgId,rddc,rus1,rus2,rusb,rspi,reserved*cs<CR><LF>
   //            ^-- string
 
-  // GPSSerial.write(s2ck("PUBX,40,DTM,0,0,0,0,0,0"));
-  // byte test[] = {0x06, 0x01, 0x03, 0x00, 0xf0, 0x0a, 0x00};
-  // GPSSerial.write(s2ck(test, 7));
   GPSSerial.print(s2ckv0("PUBX,40,GBS,0,0,0,0"));
   GPSSerial.print(s2ckv0("PUBX,40,GGA,0,0,0,0"));
   GPSSerial.print(s2ckv0("PUBX,40,GLL,0,0,0,0"));
@@ -119,22 +113,26 @@ void GPS::setup() {
   flag = false;
 
   // Save config
-  // uint8_t cfg_cfg[] = {0x06, 0x09, 0x0D, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF,
-  //   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17};
-  // while (!flag) {
-  //   sendMessage(s2ck(cfg_cfg, 17), 21);
-  //   flag = getAck(cfg_cfg);
-  // }
-  // flag = false;
+  // B5 62 06 09 0D 00 00 00 00 00 FF FF 00 00 00 00 00 00 17 31 BF
+  uint8_t cfg_cfg[] = {0xB5, 0x62, 0x06, 0x09, 0x0D,
+    0x00, 0x00, 0x00, 0x00, 0x00,
+    0xFF, 0xFF, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x17, 0x31, 0xBF};
+  while (!flag) {
+    sendMessage(cfg_cfg, 21);
+    flag = getAck(cfg_cfg);
+  }
+  flag = false;
 
-  // delay(1000);
-
-  // Turn on NMEA message - GPZDA
-  GPSSerial.print(s2ckv0("PUBX,40,ZDA,0,1,0,0"));
-
-  delay(5000);
+  // Turn on NMEA message - GxZDA
+  GPSSerial.print(s2ckv0("PUBX,40,ZDA,0,0,0,0"));
 }
 
+/**
+ * Send message
+ * @param msg uint8_t array
+ * @param len uint8_t
+ */
 void GPS::sendMessage(uint8_t *msg, uint8_t len) {
   int i = 0;
   for (i = 0; i < len; i++) {
@@ -144,6 +142,11 @@ void GPS::sendMessage(uint8_t *msg, uint8_t len) {
   GPSSerial.println();
 }
 
+/**
+ * Is acknowledge right from message?
+ * @param  msg uint8_t array
+ * @return     bool
+ */
 bool GPS::getAck(uint8_t *msg) {
   uint8_t b;
   uint8_t ackByteID = 0;
@@ -174,7 +177,7 @@ bool GPS::getAck(uint8_t *msg) {
     // Test for success
     if (ackByteID > 9) {
       // All packets in order!
-      // Serial.println(" (SUCCESS!)");
+      Serial.println(" (SUCCESS!)");
       return true;
     }
 
@@ -199,6 +202,12 @@ bool GPS::getAck(uint8_t *msg) {
   }
 }
 
+/**
+ * Config code to output code for NEO 6M
+ * @param  input  uint8_t array
+ * @param  length int
+ * @return        uint8_t array
+ */
 uint8_t *GPS::s2ck(uint8_t *input, int length) {
   uint8_t result[length + 4];
 
@@ -220,15 +229,20 @@ uint8_t *GPS::s2ck(uint8_t *input, int length) {
   result[length + 2] = CK_A;
   result[length + 3] = CK_B;
 
-  for (i = 0; i < length + 4; i++) {
-    Serial.print(result[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
+  // for (i = 0; i < length + 4; i++) {
+  //   Serial.print(result[i], HEX);
+  //   Serial.print(" ");
+  // }
+  // Serial.println();
 
   return result;
 }
 
+/**
+ * String to string with checksum
+ * @param  input String
+ * @return       String
+ */
 String GPS::s2ckv0(String input) {
   int i = 0;
   uint8_t checksum = 0;
@@ -243,6 +257,42 @@ String GPS::s2ckv0(String input) {
   String result = "$" + input + "*" + CK + "\r\n";
 
   return result;
+}
+
+/**
+ * get datetime via ZDA
+ * @return DateTime
+ */
+DateTime GPS::getZDA() {
+  DateTime dt;
+  while (!getFlag_);
+  getFlag_ = false;
+  uint8_t length = 0;
+
+  GPSSerial.print("$EIGLQ,ZDA*25\r\n");
+
+  // Serial.println("Wait for response");
+
+  while (!GPSSerial.available());
+
+  while (length < 38) {
+    while (GPSSerial.available() > 0) {
+      if (encode()) {
+        dt = now();
+        if (debug_) {
+          Serial.print(dt.ntptime());
+          Serial.print(" ");
+          Serial.println(dt.centisecond());
+        }
+      }
+      length++;
+    }
+  }
+
+  // Serial.println("End of get ZDA");
+  getFlag_ = true;
+
+  return dt;
 }
 
 /**
